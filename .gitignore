@@ -1,0 +1,41 @@
+# ============================================================
+#  CodeSage — root .gitignore
+#  (client/ and server/ also have their own .gitignore files)
+# ============================================================
+
+# ---- Dependencies (never commit; reinstalled via `npm install`) ----
+node_modules/
+
+# ---- Secrets & local environment files ----
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+# Keep the safe, committed files (no secrets in these):
+!.env.example
+!client/.env.preview
+
+# ---- Build / dist output ----
+dist/
+build/
+.vite/
+
+# ---- Test / coverage ----
+coverage/
+.nyc_output/
+
+# ---- Logs ----
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ---- OS / editor cruft ----
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*~

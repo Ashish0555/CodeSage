@@ -1,0 +1,206 @@
+/* =========================================================================
+   CodeSage design system — "the competitive programmer's desk"
+   Deep navy ink on cool paper, a faint graph-paper grid (a nod to Math &
+   Computing), and a monospace verdict system that echoes a real judge.
+   Hand-authored tokens (no Tailwind) => distinctive + no build fragility.
+   ========================================================================= */
+
+:root {
+  color-scheme: light;
+
+  /* Palette (4-6 named values) */
+  --ink: #12203a;          /* deep navy — primary text */
+  --ink-soft: #40506b;     /* secondary text */
+  --paper: #f3f5f9;        /* cool paper background */
+  --surface: #ffffff;      /* cards */
+  --line: #d7deea;         /* hairline borders / grid */
+  --accent: #3457d5;       /* electric indigo — the one bold color */
+  --accent-ink: #24378f;
+
+  /* Verdict colors (judge semantics) */
+  --ac: #1f9d63;
+  --wa: #d64545;
+  --tle: #c8791b;
+  --ce: #7a5bd0;
+
+  --radius: 10px;
+  --shadow: 0 1px 2px rgba(18, 32, 58, 0.06), 0 8px 24px rgba(18, 32, 58, 0.06);
+
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+  --font-body: 'IBM Plex Sans', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root { height: 100%; }
+
+body {
+  margin: 0;
+  font-family: var(--font-body);
+  color: var(--ink);
+  background-color: var(--paper);
+  /* Faint graph-paper grid — the signature texture. */
+  background-image:
+    linear-gradient(var(--line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--line) 1px, transparent 1px);
+  background-size: 26px 26px;
+  background-position: -1px -1px;
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.5;
+}
+
+a { color: var(--accent-ink); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+h1, h2, h3 { font-family: var(--font-display); letter-spacing: -0.01em; margin: 0 0 0.4em; }
+h1 { font-size: 1.9rem; }
+h2 { font-size: 1.35rem; }
+
+/* ---- Layout ---- */
+.container { max-width: 1180px; margin: 0 auto; padding: 0 20px; }
+.stack { display: flex; flex-direction: column; gap: 16px; }
+.row { display: flex; gap: 12px; align-items: center; }
+.spread { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.grid { display: grid; gap: 16px; }
+.muted { color: var(--ink-soft); }
+.mono { font-family: var(--font-mono); }
+
+/* ---- Top navigation ---- */
+.nav {
+  position: sticky; top: 0; z-index: 20;
+  background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--line);
+}
+.nav .container { display: flex; align-items: center; justify-content: space-between; height: 60px; }
+.brand { font-family: var(--font-display); font-weight: 700; font-size: 1.2rem; display: flex; align-items: center; gap: 8px; }
+.brand .mark {
+  font-family: var(--font-mono); background: var(--ink); color: #fff;
+  padding: 2px 7px; border-radius: 6px; font-size: 0.85rem;
+}
+.nav-links { display: flex; gap: 6px; align-items: center; }
+.nav-links a { padding: 7px 12px; border-radius: 8px; color: var(--ink-soft); font-weight: 500; }
+.nav-links a.active, .nav-links a:hover { background: var(--paper); color: var(--ink); text-decoration: none; }
+
+/* ---- Cards ---- */
+.card {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); box-shadow: var(--shadow); padding: 18px;
+}
+.card.pad-lg { padding: 26px; }
+
+/* ---- Buttons ---- */
+.btn {
+  font-family: var(--font-body); font-weight: 600; font-size: 0.92rem;
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+  padding: 9px 15px; border-radius: 8px; cursor: pointer; transition: all 0.12s ease;
+}
+.btn:hover { border-color: var(--accent); color: var(--accent-ink); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn-primary:hover { background: var(--accent-ink); color: #fff; }
+.btn-ghost { background: transparent; border-color: transparent; }
+.btn-sm { padding: 5px 10px; font-size: 0.82rem; }
+
+/* ---- Inputs ---- */
+.input, .select, textarea.input {
+  font-family: var(--font-body); font-size: 0.95rem; width: 100%;
+  padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--surface); color: var(--ink);
+}
+.input:focus, .select:focus, textarea.input:focus { outline: 2px solid var(--accent); outline-offset: 0; border-color: var(--accent); }
+label.field { display: block; font-weight: 600; font-size: 0.85rem; margin-bottom: 6px; }
+
+/* ---- Verdict + difficulty chips (monospace, judge-like) ---- */
+.chip {
+  font-family: var(--font-mono); font-size: 0.75rem; font-weight: 600;
+  padding: 3px 8px; border-radius: 6px; display: inline-flex; align-items: center; gap: 5px;
+  border: 1px solid transparent;
+}
+.chip::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor; opacity: 0.8; }
+.verdict-AC { color: var(--ac); background: rgba(31, 157, 99, 0.1); }
+.verdict-WA { color: var(--wa); background: rgba(214, 69, 69, 0.1); }
+.verdict-TLE { color: var(--tle); background: rgba(200, 121, 27, 0.12); }
+.verdict-CE, .verdict-RE { color: var(--ce); background: rgba(122, 91, 208, 0.12); }
+.diff-Easy { color: var(--ac); background: rgba(31, 157, 99, 0.1); }
+.diff-Medium { color: var(--tle); background: rgba(200, 121, 27, 0.12); }
+.diff-Hard { color: var(--wa); background: rgba(214, 69, 69, 0.1); }
+.tag { font-family: var(--font-mono); font-size: 0.72rem; color: var(--ink-soft); background: var(--paper); border: 1px solid var(--line); padding: 2px 7px; border-radius: 5px; }
+
+/* ---- Tables / lists ---- */
+.list-row {
+  display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center;
+  padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--surface); transition: border-color 0.12s ease;
+}
+.list-row:hover { border-color: var(--accent); }
+
+/* ---- Split workspace (problem + editor) ---- */
+.workspace { display: grid; grid-template-columns: 42% 58%; gap: 16px; align-items: start; }
+.panel-scroll { max-height: calc(100vh - 220px); overflow: auto; }
+
+/* ---- Chat (mock interview) ---- */
+.bubble { padding: 11px 14px; border-radius: 12px; max-width: 82%; white-space: pre-wrap; }
+.bubble.interviewer { background: var(--surface); border: 1px solid var(--line); align-self: flex-start; border-bottom-left-radius: 3px; }
+.bubble.candidate { background: var(--accent); color: #fff; align-self: flex-end; border-bottom-right-radius: 3px; }
+
+/* ---- Tabs ---- */
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); }
+.tab { font-family: var(--font-body); font-weight: 600; font-size: 0.9rem; background: transparent; border: 0; border-bottom: 2px solid transparent; color: var(--ink-soft); padding: 8px 12px; cursor: pointer; margin-bottom: -1px; }
+.tab:hover { color: var(--ink); }
+.tab.is-active { color: var(--accent-ink); border-bottom-color: var(--accent); }
+
+/* ---- Examples ---- */
+.example { border: 1px solid var(--line); border-radius: 8px; padding: 12px; background: var(--paper); }
+.example-io { white-space: pre-wrap; font-size: 0.84rem; margin-top: 6px; }
+.example-io .muted { display: block; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 2px; }
+
+/* ---- Editor column ---- */
+.editor-col { position: sticky; top: 76px; }
+.editor-shell { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); }
+.hint-box { background: var(--paper); border: 1px dashed var(--line); border-radius: 8px; padding: 12px; }
+
+/* ---- Terminal / test output ---- */
+.term { background: #0e1a30; color: #e6ecf7; padding: 10px 12px; border-radius: 8px; font-family: var(--font-mono); font-size: 0.8rem; white-space: pre-wrap; overflow: auto; margin: 4px 0 0; }
+.term-err { color: #ffb4b4; }
+.test-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.test-row:last-child { border-bottom: 0; }
+.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--line); flex: none; }
+.dot.ok { background: var(--ac); }
+.dot.bad { background: var(--wa); }
+.clean-list { margin: 0; padding-left: 18px; }
+.clean-list li { margin: 3px 0; }
+
+/* ---- Chat container (mock interview) ---- */
+.chat { display: flex; flex-direction: column; gap: 12px; min-height: 320px; }
+.bubble-role { font-family: var(--font-mono); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.06em; opacity: 0.7; margin-bottom: 4px; }
+.bubble .markdown p:last-child { margin-bottom: 0; }
+
+/* ---- Dashboard ---- */
+.dash-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; align-items: stretch; }
+.bar { height: 8px; background: var(--paper); border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
+.bar-fill { height: 100%; border-radius: 999px; transition: width 0.4s ease; }
+.diff-fill-Easy { background: var(--ac); }
+.diff-fill-Medium { background: var(--tle); }
+.diff-fill-Hard { background: var(--wa); }
+
+/* ---- Misc ---- */
+.eyebrow { font-family: var(--font-mono); font-size: 0.74rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent-ink); }
+.hairline { height: 1px; background: var(--line); border: 0; margin: 4px 0; }
+.spinner { width: 16px; height: 16px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; display: inline-block; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.markdown p { margin: 0 0 0.7em; }
+.markdown pre { background: #0e1a30; color: #e6ecf7; padding: 12px; border-radius: 8px; overflow: auto; font-family: var(--font-mono); font-size: 0.85rem; }
+.markdown code { font-family: var(--font-mono); font-size: 0.88em; }
+.markdown :not(pre) > code { background: var(--paper); padding: 1px 5px; border-radius: 4px; }
+
+/* Accessibility: honor reduced-motion. */
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+/* Responsive: stack the workspace on small screens. */
+@media (max-width: 860px) {
+  .workspace { grid-template-columns: 1fr; }
+  .panel-scroll { max-height: none; }
+  .editor-col { position: static; }
+  .dash-grid { grid-template-columns: 1fr; }
+}
