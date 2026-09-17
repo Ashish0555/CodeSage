@@ -1,24 +1,10 @@
 /**
  * Seed script — `npm run seed`
- *
- * Populates a fresh database so the app is demo-ready in one command:
- *   1. connect to MongoDB
- *   2. wipe the collections we own (idempotent — safe to re-run)
- *   3. insert the curated problems
- *   4. create a demo user (demo@codesage.dev / demo1234)
- *   5. build the RAG knowledge base from every problem editorial + concept note
- *
- * Step 5 needs the embedding model, so it is SKIPPED with a clear message when
- * GEMINI_API_KEY is absent. Everything else still works — the app boots and the
- * judge/auth/problems all function without any AI key (graceful degradation).
  */
 
-import mongoose from 'mongoose';
-import { connectDB, disconnectDB } from '../config/db.js';
+import bcrypt from 'bcryptjs';
+import { connectDB, disconnectDB, prisma } from '../config/db.js';
 import { config } from '../config/env.js';
-import { Problem } from '../models/Problem.js';
-import { User } from '../models/User.js';
-import { KnowledgeChunk } from '../models/KnowledgeChunk.js';
 import { ingestDocument } from '../services/ragService.js';
 import { aiAvailable } from '../services/aiService.js';
 import { problems } from './problems.js';
@@ -28,31 +14,62 @@ const DEMO_USER = { name: 'Demo User', email: 'demo@codesage.dev', password: 'de
 
 async function seed() {
   await connectDB();
-  console.log(`[seed] using database: ${mongoose.connection.name}`);
+  console.log(`[seed] using database: ${config.databaseUrl}`);
 
-  // 1) Reset the collections we manage (keeps re-runs clean and predictable).
-  await Promise.all([
-    Problem.deleteMany({}),
-    KnowledgeChunk.deleteMany({}),
-    User.deleteMany({ email: DEMO_USER.email }),
+  await prisma.$transaction([
+    prisma.knowledgeChunk.deleteMany(),
+    prisma.testCase.deleteMany(),
+    prisma.problem.deleteMany(),
+    prisma.user.deleteMany({ where: { email: DEMO_USER.email } }),
   ]);
-  console.log('[seed] cleared problems, knowledge chunks, and the demo user');
+  console.log('[seed] cleared problems, test cases, knowledge chunks, and the demo user');
 
-  // 2) Problems.
-  const inserted = await Problem.insertMany(problems);
+  const inserted = [];
+  for (const problem of problems) {
+    const created = await prisma.problem.create({
+      data: {
+        slug: problem.slug,
+        title: problem.title,
+        statement: problem.statement,
+        difficulty: problem.difficulty,
+        topics: problem.topics || [],
+        companies: problem.companies || [],
+        constraints: problem.constraints || '',
+        examples: problem.examples || [],
+        starterCode: problem.starterCode || {},
+        editorial: problem.editorial || '',
+        timeLimitMs: problem.timeLimitMs || 4000,
+      },
+    });
+    if (problem.testCases?.length) {
+      await prisma.testCase.createMany({
+        data: problem.testCases.map((tc) => ({
+          problemId: created.id,
+          input: tc.input || '',
+          expectedOutput: tc.expectedOutput,
+          isHidden: !!tc.isHidden,
+        })),
+      });
+    }
+    inserted.push({ ...created, topics: problem.topics || [], companies: problem.companies || [] });
+  }
   const bySlug = Object.fromEntries(inserted.map((p) => [p.slug, p]));
   console.log(`[seed] inserted ${inserted.length} problems`);
 
-  // 3) Demo user (so reviewers can log in immediately).
-  const demo = new User({ name: DEMO_USER.name, email: DEMO_USER.email });
-  await demo.setPassword(DEMO_USER.password);
-  await demo.save();
+  const passwordHash = await bcrypt.hash(DEMO_USER.password, 10);
+  await prisma.user.create({
+    data: {
+      name: DEMO_USER.name,
+      email: DEMO_USER.email,
+      passwordHash,
+      role: 'user',
+      stats: { solved: 0, attempts: 0, byTopic: {}, byDifficulty: { easy: 0, medium: 0, hard: 0 } },
+    },
+  });
   console.log(`[seed] created demo user -> ${DEMO_USER.email} / ${DEMO_USER.password}`);
 
-  // 4) RAG knowledge base — editorials + concept notes. Needs embeddings.
   if (!aiAvailable()) {
     console.warn('[seed] GEMINI_API_KEY not set — SKIPPING knowledge-base ingestion.');
-    console.warn('[seed] Problems/auth/judge work now; the Tutor turns on once a key is added and you re-run seed.');
   } else {
     let chunks = 0;
     for (const p of inserted) {
@@ -63,7 +80,7 @@ async function seed() {
         source: `editorial/${p.slug}`,
         topics: p.topics,
         companies: p.companies,
-        problem: p._id,
+        problem: p.id,
       });
     }
     for (const note of conceptNotes) {
@@ -78,8 +95,6 @@ async function seed() {
     console.log(`[seed] ingested ${chunks} knowledge chunks (backend: ${config.vector.backend})`);
   }
 
-  // Reference bySlug just to be explicit it exists (useful if you extend the seed
-  // with sample submissions later).
   void bySlug;
 
   await disconnectDB();

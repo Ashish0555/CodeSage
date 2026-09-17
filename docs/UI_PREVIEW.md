@@ -20,7 +20,7 @@ The Gemini key is **optional in every case** — the app never requires it. What
 
 ## Option A — Mock preview mode (recommended)
 
-This runs the **entire** React app with a built-in fake API. No `server`, no MongoDB, no keys. Every screen is populated with realistic sample data, and the streaming features (AI hints, mock-interview chat) still "type" token-by-token so the UX looks exactly like the real thing.
+This runs the **entire** React app with a built-in fake API. No `server`, no database, no keys. Every screen is populated with realistic sample data, and the streaming features (AI hints, mock-interview chat) still "type" token-by-token so the UX looks exactly like the real thing.
 
 ```bash
 cd codesage/client
@@ -99,7 +99,7 @@ That's the entire footprint. Remove the flag and the app is byte-for-byte the re
 
 ```
                      ┌─────────────────── PREVIEW off (normal) ───────────────────┐
-  React page ──▶ api.get/post ──▶ fetch('/api/...') ──▶ Vite proxy ──▶ Express ──▶ Mongo/Gemini
+    React page ──▶ api.get/post ──▶ fetch('/api/...') ──▶ Vite proxy ──▶ Express ──▶ PostgreSQL/Gemini
                      └─────────────────────────────────────────────────────────────┘
 
                      ┌─────────────────── PREVIEW on (dev:mock) ──────────────────┐
@@ -112,7 +112,7 @@ That's the entire footprint. Remove the flag and the app is byte-for-byte the re
 
 ## Turning it off / going live
 
-- **Option A → real app**: stop the dev server and run the full stack from the [README](../README.md) (`server`: `npm install`, `.env` with `MONGODB_URI` + `JWT_SECRET`, `npm run seed`, `npm run dev`; then `client`: `npm run dev`). The Gemini key stays optional — without it, AI features show real "offline" fallbacks instead of canned text.
+- **Option A → real app**: stop the dev server and run the full stack from the [README](../README.md) (`server`: `npm install`, `.env` with `DATABASE_URL` + `JWT_SECRET`, `npx prisma migrate dev`, `npm run seed`, `npm run dev`; then `client`: `npm run dev`). The Gemini key stays optional — without it, AI features show real "offline" fallbacks instead of canned text.
 - **Delete it entirely**: remove `client/src/lib/preview.js`, `client/.env.preview`, the `dev:mock`/`build:preview` scripts, and the four small `if (PREVIEW)` guards. Nothing else depends on it.
 
 ---

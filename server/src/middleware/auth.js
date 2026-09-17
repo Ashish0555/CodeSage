@@ -1,12 +1,19 @@
 import { verifyToken } from '../utils/token.js';
-import { User } from '../models/User.js';
+import { prisma } from '../infrastructure/database/prisma.js';
 import { ApiError, asyncHandler } from './error.js';
+
+function toSafeUser(user) {
+  return {
+    ...user,
+    id: user.id,
+    _id: user.id,
+    stats: user.stats ?? {},
+  };
+}
 
 /**
  * Auth middleware. Reads a Bearer token, verifies the JWT, loads the user,
- * and attaches it to req.user. Because JWTs are stateless, this does NOT hit
- * a session store — it only optionally loads the user record (useful for role
- * checks and up-to-date stats).
+ * and attaches it to req.user.
  */
 export const requireAuth = asyncHandler(async (req, res, next) => {
   const header = req.headers.authorization || '';
@@ -20,10 +27,10 @@ export const requireAuth = asyncHandler(async (req, res, next) => {
     throw new ApiError(401, 'Invalid or expired token');
   }
 
-  const user = await User.findById(payload.sub);
+  const user = await prisma.user.findUnique({ where: { id: String(payload.sub) } });
   if (!user) throw new ApiError(401, 'User no longer exists');
 
-  req.user = user;
+  req.user = toSafeUser(user);
   next();
 });
 

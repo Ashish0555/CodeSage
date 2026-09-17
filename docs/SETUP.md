@@ -8,7 +8,7 @@ built, see [`ARCHITECTURE.md`](ARCHITECTURE.md).
 ## 1. Prerequisites
 
 - **Node.js ≥ 18** (the server sets `"engines": { "node": ">=18" }`).
-- **MongoDB** — either local (`mongodb://127.0.0.1:27017`) or a free **MongoDB Atlas** M0 cluster.
+- **PostgreSQL 16+** — local Postgres or a managed cloud Postgres instance.
 - **(Optional) Google Gemini API key** — free from [Google AI Studio](https://aistudio.google.com/app/apikey).
   Without it the app still runs; AI features fall back gracefully.
 
@@ -24,6 +24,7 @@ cd CodeSage
 cd server
 npm install
 cp .env.example .env          # then edit .env (see §3)
+npx prisma migrate dev        # create the PostgreSQL schema
 npm run seed                  # 5 problems + concept notes + demo user (+ RAG KB if a key is set)
 npm run dev                   # API on http://localhost:5000   (nodemon)
 
@@ -58,55 +59,49 @@ See [`UI_PREVIEW.md`](UI_PREVIEW.md) for what is / isn't real in preview mode.
 
 ## 3. Environment variables (`server/.env`)
 
-Copy from `server/.env.example`. The app boots with just `MONGODB_URI` + `JWT_SECRET`.
+Copy from `server/.env.example`. The app boots with just `DATABASE_URL` + `JWT_SECRET`.
 
 | Variable | Default | Notes |
 |---|---|---|
 | `PORT` | `5000` | API port (hosts like Render override this automatically). |
 | `NODE_ENV` | `development` | `production` in deploys. |
 | `CLIENT_URL` | `http://localhost:5173` | Allowed CORS origin — set to your deployed frontend URL. |
-| `MONGODB_URI` | `mongodb://127.0.0.1:27017/codesage` | Local or Atlas SRV string. |
+| `DATABASE_URL` | `postgresql://postgres:postgres@localhost:5432/codesage` | Local PostgreSQL connection string. |
 | `JWT_SECRET` | *(insecure dev default)* | **Set a long random string before deploying.** |
 | `JWT_EXPIRES_IN` | `7d` | Token lifetime. |
 | `GEMINI_API_KEY` | *(empty)* | Optional. Empty ⇒ AI runs in fallback mode. |
 | `GEMINI_TEXT_MODEL` | `gemini-2.5-flash` | Text model. |
 | `GEMINI_EMBED_MODEL` | `gemini-embedding-001` | Embeddings model. |
-| `GEMINI_EMBED_DIM` | `768` | Must match your Atlas vector index dimensions. |
+| `GEMINI_EMBED_DIM` | `768` | Recommended embed dimension for the RAG flow. |
 | `AI_ENABLED` | `true` | AI is on only if this is true **and** a key exists. |
 | `PISTON_URL` | `https://emkc.org/api/v2/piston` | Code-execution sandbox. |
-| `VECTOR_BACKEND` | `memory` | `memory` (cosine in Node, zero infra) or `atlas`. |
-| `VECTOR_INDEX` | `vector_index` | Atlas Vector Search index name (only for `atlas`). |
+| `VECTOR_BACKEND` | `memory` | `memory` (cosine in Node, zero infra) or `atlas`-style fallback mode. |
+| `VECTOR_INDEX` | `vector_index` | Reserved for vector-search setups when enabled. |
 
 > Never commit your real `.env` — it is git-ignored. Only `.env.example` is committed.
 
 ---
 
-## 4. MongoDB Atlas (cloud DB)
+## 4. Local PostgreSQL (recommended)
 
-1. Create a free **M0** cluster at [cloud.mongodb.com](https://cloud.mongodb.com).
-2. **Database Access** → add a user (username + password).
-3. **Network Access** → allow your IP (or `0.0.0.0/0` for a quick demo).
-4. **Connect → Drivers** → copy the SRV string and set it as `MONGODB_URI`, e.g.
-   `mongodb+srv://USER:PASS@cluster0.xxxx.mongodb.net/codesage?retryWrites=true&w=majority`.
+The simplest setup is a local Postgres instance. The project ships a Docker Compose file so you can run the database without installing Postgres by hand.
 
-### Optional: Atlas Vector Search (RAG `atlas` backend)
-
-Only needed if you set `VECTOR_BACKEND=atlas` (the `memory` backend needs no index):
-
-1. Atlas → your collection `knowledgechunks` → **Search Indexes** → **Create** (Vector Search).
-2. Name it to match `VECTOR_INDEX` (default `vector_index`), on path `embedding`:
-
-```json
-{
-  "fields": [
-    { "type": "vector", "path": "embedding", "numDimensions": 768, "similarity": "cosine" },
-    { "type": "filter", "path": "topics" },
-    { "type": "filter", "path": "companies" }
-  ]
-}
+```bash
+cd CodeSage
+docker compose up -d postgres
 ```
 
-3. Ensure `GEMINI_EMBED_DIM` (768) matches `numDimensions`, then re-run `npm run seed`.
+That starts a Postgres 16 instance with a `codesage` database and the credentials from the default `.env.example`.
+
+### Optional: pgvector
+
+If you want a vector extension for the RAG layer, enable it in Postgres:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS vector;
+```
+
+When the project is deployed with a managed Postgres service, point `DATABASE_URL` at that host and run the same Prisma migration flow.
 
 ---
 
@@ -120,7 +115,7 @@ lowest-friction split is a backend service + a static frontend with a rewrite ru
 - **Root directory**: `server`
 - **Build command**: `npm install`
 - **Start command**: `npm start`  (`node src/index.js`)
-- **Environment**: set `MONGODB_URI`, `JWT_SECRET`, `CLIENT_URL` (your frontend URL),
+- **Environment**: set `DATABASE_URL`, `JWT_SECRET`, `CLIENT_URL` (your frontend URL),
   `NODE_ENV=production`, and optionally `GEMINI_API_KEY`, `VECTOR_BACKEND`, etc. Render provides
   `PORT` automatically and the config already reads `process.env.PORT`.
 - **Seed once** after the first deploy: open the Render shell and run `npm run seed`.

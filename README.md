@@ -1,6 +1,6 @@
 # CodeSage — AI Interview & DSA Coach
 
-![Stack](https://img.shields.io/badge/stack-MERN-informational)
+![Stack](https://img.shields.io/badge/stack-PostgreSQL%20%2B%20Prisma-informational)
 ![AI](https://img.shields.io/badge/AI-Google%20Gemini-4285F4)
 ![Node](https://img.shields.io/badge/Node-%E2%89%A518-339933)
 ![License](https://img.shields.io/badge/license-MIT-blue)
@@ -29,7 +29,7 @@ Most "AI coding" demos let the model *grade* the code, which is unreliable. Code
 ## Tech stack
 
 - **Frontend**: React 18 + Vite, react-router, Monaco editor, react-markdown, a hand-written CSS design system (no Tailwind — distinctive + zero build fragility).
-- **Backend**: Node + Express (ES Modules), Mongoose/MongoDB, JWT auth (bcrypt), helmet, rate limiting, SSE for streaming.
+- **Backend**: Node + Express (ES Modules), PostgreSQL + Prisma, JWT auth (bcrypt), helmet, rate limiting, SSE for streaming.
 - **AI**: Google Gemini via `@google/genai` (`gemini-2.5-flash` for text, `gemini-embedding-001` @768-dim for RAG), behind a **provider adapter** so the vendor is swappable.
 - **Execution**: Piston public API for the MVP; self-hosted Judge0 is the documented "production" path.
 
@@ -37,13 +37,14 @@ Most "AI coding" demos let the model *grade* the code, which is unreliable. Code
 
 ## Quick start
 
-**Prerequisites**: Node ≥ 18, and MongoDB (local, or a free MongoDB Atlas cluster).
+**Prerequisites**: Node ≥ 18 and PostgreSQL 16+ (or the provided Docker Compose setup).
 
 ```bash
 # 1) Backend
 cd codesage/server
 npm install
 cp .env.example .env          # then edit .env (see below)
+npx prisma migrate dev        # creates the Postgres schema
 npm run seed                  # loads 5 problems + a demo user (+ RAG KB if a key is set)
 npm run dev                   # starts the API on http://localhost:5000
 
@@ -62,10 +63,10 @@ password: demo1234
 
 ### Minimum `.env`
 
-The app boots with just a Mongo URI and a JWT secret — **AI is optional**:
+The app boots with just a PostgreSQL connection string and a JWT secret — **AI is optional**:
 
 ```bash
-MONGODB_URI=mongodb://127.0.0.1:27017/codesage
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/codesage
 JWT_SECRET=some_long_random_string
 # GEMINI_API_KEY=...   # add later to turn on hints/review/interview/tutor
 ```
@@ -83,8 +84,8 @@ React (Vite)  ──/api──▶  Express
                            ├── run/submit ──▶ Piston sandbox ──▶ verdict (source of truth)
                            ├── ai/* (SSE stream) ──▶ provider adapter ──▶ Gemini
                            │                                   └── (no key) safe fallbacks
-                           └── ai/ask (RAG) ──▶ embed+retrieve (memory | atlas) ──▶ grounded answer
-                                       MongoDB (users, problems, submissions, sessions, KB chunks)
+                           └── ai/ask (RAG) ──▶ embed+retrieve (memory | pgvector) ──▶ grounded answer
+                                       PostgreSQL + Prisma (users, problems, submissions, sessions, KB chunks)
 ```
 
 - **Streaming** (hints, interview) uses **Server-Sent Events** — one-way server→client, simpler than WebSockets, and the client reads it with `fetch` so it can send an auth header.
@@ -100,8 +101,8 @@ For the full technical deep-dive — request flows, the six data models, and the
 codesage/
 ├── server/                 # Express API (ES Modules)
 │   ├── src/
-│   │   ├── config/         # env + db connection
-│   │   ├── models/         # Mongoose schemas
+│   │   ├── config/         # env + database config
+│   │   ├── infrastructure/  # Prisma client and database wiring
 │   │   ├── middleware/     # auth, rate limits, error handling
 │   │   ├── services/       # execService (Piston), aiService, llmProvider, ragService
 │   │   ├── controllers/    # request handlers

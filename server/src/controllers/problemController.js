@@ -1,4 +1,4 @@
-import { Problem } from '../models/Problem.js';
+import { prisma } from '../infrastructure/database/prisma.js';
 import { asyncHandler, ApiError } from '../middleware/error.js';
 
 /**
@@ -11,20 +11,20 @@ export const listProblems = asyncHandler(async (req, res) => {
   const page = Math.max(1, parseInt(req.query.page || '1', 10));
   const limit = Math.min(50, Math.max(1, parseInt(req.query.limit || '20', 10)));
 
-  const q = {};
-  if (difficulty) q.difficulty = difficulty;
-  if (topic) q.topics = topic;
-  if (company) q.companies = company;
-  if (search) q.$text = { $search: search };
+  const where = {};
+  if (difficulty) where.difficulty = difficulty;
+  if (topic) where.topics = { has: String(topic) };
+  if (company) where.companies = { has: String(company) };
 
   const [items, total] = await Promise.all([
-    Problem.find(q)
-      .select('slug title difficulty topics companies')
-      .sort({ createdAt: 1 })
-      .skip((page - 1) * limit)
-      .limit(limit)
-      .lean(),
-    Problem.countDocuments(q),
+    prisma.problem.findMany({
+      where,
+      select: { id: true, slug: true, title: true, difficulty: true, topics: true, companies: true, createdAt: true },
+      orderBy: { createdAt: 'asc' },
+      skip: (page - 1) * limit,
+      take: limit,
+    }),
+    prisma.problem.count({ where }),
   ]);
 
   res.json({ items, total, page, limit });
@@ -36,15 +36,20 @@ export const listProblems = asyncHandler(async (req, res) => {
  * and never leaks expected outputs for hidden tests.
  */
 export const getProblem = asyncHandler(async (req, res) => {
-  const problem = await Problem.findOne({ slug: req.params.slug }).lean();
+  const problem = await prisma.problem.findUnique({
+    where: { slug: req.params.slug },
+    include: { testCases: true },
+  });
   if (!problem) throw new ApiError(404, 'Problem not found');
 
-  const visibleTests = (problem.testCases || []).filter((t) => !t.isHidden);
-  const hiddenCount = (problem.testCases || []).length - visibleTests.length;
+  const visibleTests = problem.testCases.filter((t) => !t.isHidden);
+  const hiddenCount = problem.testCases.length - visibleTests.length;
 
   res.json({
     ...problem,
-    testCases: visibleTests, // hidden tests never sent to the client
+    id: problem.id,
+    _id: problem.id,
+    testCases: visibleTests,
     hiddenTestCount: hiddenCount,
   });
 });

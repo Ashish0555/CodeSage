@@ -31,14 +31,14 @@ This is the thing worth talking about: it is an honest, defensible use of an LLM
 ```mermaid
 flowchart LR
   U[Browser: React 18 + Vite] -->|/api  fetch + JWT| S[Express API]
-  S --> DB[(MongoDB / Mongoose)]
+  S --> DB[(PostgreSQL + Prisma)]
   S -->|run / submit| P[Piston sandbox]
   S -->|hints / review / interview / tutor| G[Google Gemini]
   S -.->|no API key| F[Deterministic fallbacks]
   subgraph Retrieval
     S -->|embed + search| V{Vector backend}
     V -->|memory| MEM[In-memory cosine in Node]
-    V -->|atlas| ATL[Atlas $vectorSearch]
+    V -->|pgvector| PV[Postgres vector search]
   end
 ```
 
@@ -91,7 +91,7 @@ sequenceDiagram
   participant C as Client
   participant API as Express
   participant J as Piston
-  participant DB as MongoDB
+  participant DB as PostgreSQL
   C->>API: POST /api/run  (auth, code, language)  [visible tests only]
   API->>J: execute code against each test case
   J-->>API: stdout / stderr / time per case
@@ -127,8 +127,8 @@ flowchart LR
 ```
 
 Embeddings are **L2-normalized** at ingest, so cosine similarity reduces to a dot product. The
-`memory` backend ranks entirely in Node (zero infra — great for local dev); the `atlas` backend
-uses MongoDB Atlas Vector Search. Same interface, chosen by the `VECTOR_BACKEND` flag.
+`memory` backend ranks entirely in Node (zero infra — great for local dev); the vector-backed path
+uses PostgreSQL/pgvector when available. Same interface, chosen by the `VECTOR_BACKEND` flag.
 
 ### 4.4 Mock interview
 
@@ -141,8 +141,8 @@ replayed to the model on each turn, so sessions are resumable and auditable.
 
 ## 5. Data model
 
-Six Mongoose collections. Passwords are `select:false`; vectors live in their own collection so
-they never bloat hot reads.
+A relational schema with users, problems, submissions, interview sessions, AI reviews, and knowledge chunks.
+The application keeps the historical persistence semantics while normalizing them into PostgreSQL tables.
 
 ```mermaid
 erDiagram
@@ -162,7 +162,7 @@ erDiagram
 | **Submission** | `user`, `problem`, `language`, `code`, `verdict` (`AC/WA/TLE/CE/RE`), `passedCount`, `totalCount`, `runtimeMs`, `testResults[]` | Compound index `{user, problem, createdAt:-1}` for the hot "my attempts" query. |
 | **InterviewSession** | `user`, `problem?`, `status` (`active`/`finished`), `messages[]{role, content, ts}`, `finalEvaluation{problemSolving, communication, codeQuality, overall, notes}`, `finishedAt` | Transcript = conversation state. |
 | **AIReview** | `submission`, `user`, `model`, `timeComplexity`, `spaceComplexity`, `codeQualityScore` (1–10), `strengths[]`, `improvements[]`, `edgeCasesMissed[]`, `groundedVerdict`, `raw` | `groundedVerdict` copied from the judge; complexity are estimates. |
-| **KnowledgeChunk** | `text`, `embedding[]` (=`GEMINI_EMBED_DIM`, default 768), `source`, `title`, `topics[]`, `companies[]`, `problem?` | Own collection so the vector array never bloats Problem/Submission reads. Atlas index: cosine, `numDimensions=768`, filters on `topics`/`companies`. |
+| **KnowledgeChunk** | `text`, `embedding[]` (=`GEMINI_EMBED_DIM`, default 768), `source`, `title`, `topics[]`, `companies[]`, `problem?` | Stored in PostgreSQL and optionally extended with pgvector similarity search. Filters on `topics`/`companies` remain available. |
 
 ---
 

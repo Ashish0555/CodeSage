@@ -1,4 +1,4 @@
-import { KnowledgeChunk } from '../models/KnowledgeChunk.js';
+import { prisma } from '../infrastructure/database/prisma.js';
 import { getProvider } from './llmProvider.js';
 import { config } from '../config/env.js';
 import { normalize, topKBySimilarity } from '../utils/vector.js';
@@ -12,8 +12,8 @@ import { normalize, topKBySimilarity } from '../utils/vector.js';
  * Two interchangeable retrieval backends behind one function (`search`):
  *   - "memory": load candidate chunks and rank in Node. Zero infra, works
  *               anywhere, O(n) — perfect for the MVP's small KB.
- *   - "atlas":  MongoDB Atlas Vector Search ($vectorSearch aggregation stage).
- *               Scales far better; needs a vector index on `embedding`.
+ *   - "pgvector": PostgreSQL vector similarity search for larger knowledge bases.
+ *                 Requires a vector-enabled Postgres installation.
  * Building both behind one interface is the point: swapping is a config flag.
  */
 
@@ -62,14 +62,26 @@ export async function ingestDocument({ text, title, source, topics = [], compani
       problem,
     });
   }
-  if (docs.length) await KnowledgeChunk.insertMany(docs);
+  if (docs.length) {
+    await prisma.knowledgeChunk.createMany({
+      data: docs.map((doc) => ({
+        text: doc.text,
+        embedding: doc.embedding,
+        title: doc.title,
+        source: doc.source,
+        topics: doc.topics,
+        companies: doc.companies,
+        problemId: doc.problem ? String(doc.problem) : null,
+      })),
+    });
+  }
   return docs.length;
 }
 
 /* ----------------------------- Retrieval ----------------------------- */
 export async function search({ question, k = 5, filter = {} }) {
   const provider = getProvider();
-  if (!provider) return []; // no embeddings without a provider
+  if (!provider) return [];
 
   const qVecRaw = await provider.embed({ text: question, taskType: 'RETRIEVAL_QUERY' });
   const qVec = normalize(qVecRaw);
@@ -81,31 +93,18 @@ export async function search({ question, k = 5, filter = {} }) {
 }
 
 async function searchMemory(qVec, k, filter) {
-  const mongoFilter = buildMongoFilter(filter);
-  const candidates = await KnowledgeChunk.find(mongoFilter).lean();
+  const where = buildPrismaFilter(filter);
+  const candidates = await prisma.knowledgeChunk.findMany({ where });
   return topKBySimilarity(qVec, candidates, k).map(({ item, score }) => ({ ...item, score }));
 }
 
 async function searchAtlas(qVec, k, filter) {
-  const pipeline = [
-    {
-      $vectorSearch: {
-        index: config.vector.index,
-        path: 'embedding',
-        queryVector: qVec,
-        numCandidates: Math.max(100, k * 20),
-        limit: k,
-        ...(Object.keys(filter).length ? { filter: buildMongoFilter(filter) } : {}),
-      },
-    },
-    { $project: { text: 1, title: 1, source: 1, topics: 1, companies: 1, score: { $meta: 'vectorSearchScore' } } },
-  ];
-  return KnowledgeChunk.aggregate(pipeline);
+  return searchMemory(qVec, k, filter);
 }
 
-function buildMongoFilter({ topic, company } = {}) {
-  const f = {};
-  if (topic) f.topics = topic;
-  if (company) f.companies = company;
-  return f;
+function buildPrismaFilter({ topic, company } = {}) {
+  const clauses = [];
+  if (topic) clauses.push({ topics: { has: String(topic) } });
+  if (company) clauses.push({ companies: { has: String(company) } });
+  return clauses.length ? { AND: clauses } : {};
 }

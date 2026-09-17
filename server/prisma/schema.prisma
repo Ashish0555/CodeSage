@@ -1,0 +1,180 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  user
+  admin
+}
+
+enum ProblemDifficulty {
+  Easy
+  Medium
+  Hard
+}
+
+enum SubmissionVerdict {
+  AC
+  WA
+  TLE
+  CE
+  RE
+}
+
+enum InterviewStatus {
+  active
+  finished
+}
+
+enum InterviewRole {
+  interviewer
+  candidate
+}
+
+model User {
+  id           String    @id @default(uuid())
+  name         String
+  email        String    @unique
+  passwordHash String
+  role         UserRole  @default(user)
+  stats        Json      @default("{}")
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  submissions      Submission[]
+  aiReviews        AIReview[]
+  interviewSessions InterviewSession[]
+
+  @@map("users")
+}
+
+model Problem {
+  id           String            @id @default(uuid())
+  slug         String            @unique
+  title        String
+  statement    String
+  difficulty   ProblemDifficulty
+  topics       String[]          @default([])
+  companies    String[]          @default([])
+  constraints  String            @default("")
+  examples     Json              @default("[]")
+  starterCode  Json              @default("{}")
+  editorial    String            @default("")
+  timeLimitMs  Int               @default(4000)
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  testCases         TestCase[]
+  submissions       Submission[]
+  knowledgeChunks   KnowledgeChunk[]
+  interviewSessions InterviewSession[]
+
+  @@map("problems")
+}
+
+model TestCase {
+  id             String   @id @default(uuid())
+  problemId      String
+  problem        Problem  @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  input          String   @default("")
+  expectedOutput String
+  isHidden       Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  @@index([problemId])
+  @@map("test_cases")
+}
+
+model Submission {
+  id          String            @id @default(uuid())
+  userId      String
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  problemId   String
+  problem     Problem           @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  language    String
+  code        String
+  verdict     SubmissionVerdict
+  passedCount Int               @default(0)
+  totalCount  Int               @default(0)
+  runtimeMs   Int               @default(0)
+  testResults Json              @default("[]")
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  aiReview AIReview?
+
+  @@index([userId, problemId, createdAt])
+  @@map("submissions")
+}
+
+model AIReview {
+  id               String            @id @default(uuid())
+  submissionId     String            @unique
+  submission       Submission        @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  userId           String
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  model            String?
+  timeComplexity   String?
+  spaceComplexity  String?
+  codeQualityScore Int?
+  strengths        String[]          @default([])
+  improvements     String[]          @default([])
+  edgeCasesMissed  String[]          @default([])
+  groundedVerdict  SubmissionVerdict?
+  raw              Json?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@map("ai_reviews")
+}
+
+model InterviewSession {
+  id               String            @id @default(uuid())
+  userId           String
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  problemId        String?
+  problem          Problem?          @relation(fields: [problemId], references: [id], onDelete: SetNull)
+  status           InterviewStatus   @default(active)
+  finalEvaluation  Json?
+  finishedAt       DateTime?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  messages InterviewMessage[]
+
+  @@index([userId, createdAt])
+  @@map("interview_sessions")
+}
+
+model InterviewMessage {
+  id        String         @id @default(uuid())
+  sessionId String
+  session   InterviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  role      InterviewRole
+  content   String
+  ts        DateTime       @default(now())
+
+  @@index([sessionId, ts])
+  @@map("interview_messages")
+}
+
+model KnowledgeChunk {
+  id        String   @id @default(uuid())
+  text      String
+  embedding Float[]  @default([])
+  source    String?
+  title     String?
+  topics    String[] @default([])
+  companies String[] @default([])
+  problemId String?
+  problem   Problem? @relation(fields: [problemId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("knowledge_chunks")
+}

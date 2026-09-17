@@ -29,7 +29,7 @@ export async function* streamHint({ problem, level, code }) {
   }
 
   const cacheable = !code;
-  const key = `hint:v1:${problem._id}:${level}`;
+  const key = `hint:v1:${problem.id || problem._id}:${level}`;
   if (cacheable && cache.has(key)) {
     yield cache.get(key);
     return;

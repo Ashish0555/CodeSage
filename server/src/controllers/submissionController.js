@@ -1,19 +1,20 @@
-import { Problem } from '../models/Problem.js';
-import { Submission } from '../models/Submission.js';
+import { prisma } from '../infrastructure/database/prisma.js';
 import { runTests } from '../services/execService.js';
 import { asyncHandler, ApiError } from '../middleware/error.js';
 import { validate, runSchema, submitSchema } from '../utils/validation.js';
 
 /**
  * POST /api/run  — run against VISIBLE sample cases only; nothing is saved.
- * Fast feedback loop while the user is still iterating.
  */
 export const runCode = asyncHandler(async (req, res) => {
   const { problemSlug, language, code } = validate(runSchema, req.body);
-  const problem = await Problem.findOne({ slug: problemSlug });
+  const problem = await prisma.problem.findUnique({
+    where: { slug: problemSlug },
+    include: { testCases: true },
+  });
   if (!problem) throw new ApiError(404, 'Problem not found');
 
-  const sampleTests = (problem.testCases || []).filter((t) => !t.isHidden);
+  const sampleTests = problem.testCases.filter((t) => !t.isHidden);
   const result = await runTests({
     langKey: language,
     code,
@@ -30,40 +31,43 @@ export const runCode = asyncHandler(async (req, res) => {
  */
 export const submitCode = asyncHandler(async (req, res) => {
   const { problemSlug, language, code } = validate(submitSchema, req.body);
-  const problem = await Problem.findOne({ slug: problemSlug });
+  const problem = await prisma.problem.findUnique({
+    where: { slug: problemSlug },
+    include: { testCases: true },
+  });
   if (!problem) throw new ApiError(404, 'Problem not found');
 
   const result = await runTests({
     langKey: language,
     code,
-    testCases: problem.testCases || [],
+    testCases: problem.testCases,
     timeLimitMs: problem.timeLimitMs,
   });
 
-  const submission = await Submission.create({
-    user: req.user._id,
-    problem: problem._id,
-    language,
-    code,
-    verdict: result.verdict,
-    passedCount: result.passedCount,
-    totalCount: result.totalCount,
-    runtimeMs: result.runtimeMs,
-    // Only persist non-hidden failures' stderr; never leak hidden expected outputs.
-    testResults: result.testResults.map((t) => ({
-      index: t.index,
-      passed: t.passed,
-      timeMs: t.timeMs,
-      isHidden: t.isHidden,
-      stderr: t.isHidden ? '' : t.stderr,
-    })),
+  const submission = await prisma.submission.create({
+    data: {
+      userId: req.user.id || req.user._id,
+      problemId: problem.id,
+      language,
+      code,
+      verdict: result.verdict,
+      passedCount: result.passedCount,
+      totalCount: result.totalCount,
+      runtimeMs: result.runtimeMs,
+      testResults: result.testResults.map((t) => ({
+        index: t.index,
+        passed: t.passed,
+        timeMs: t.timeMs,
+        isHidden: t.isHidden,
+        stderr: t.isHidden ? '' : t.stderr,
+      })),
+    },
   });
 
   await updateStatsOnAccept(req.user, problem, result.verdict);
 
-  // Hide expected outputs of hidden tests in the response too.
   res.status(201).json({
-    submissionId: submission._id,
+    submissionId: submission.id,
     verdict: result.verdict,
     passedCount: result.passedCount,
     totalCount: result.totalCount,
@@ -75,46 +79,76 @@ export const submitCode = asyncHandler(async (req, res) => {
 
 /** Increment attempt/solve stats. A problem counts as "solved" only once. */
 async function updateStatsOnAccept(user, problem, verdict) {
-  user.stats.attempts += 1;
+  const userId = user.id || user._id;
+  const current = await prisma.user.findUnique({ where: { id: userId } });
+  if (!current) return;
+
+  const stats = current.stats && typeof current.stats === 'object' ? current.stats : {};
+  stats.attempts = Number(stats.attempts || 0) + 1;
+
   if (verdict === 'AC') {
-    // The just-created AC submission is already in the DB, so the FIRST accept
-    // yields a count of exactly 1. Anything >1 means it was solved before.
-    const acCount = await Submission.countDocuments({ user: user._id, problem: problem._id, verdict: 'AC' });
+    const acCount = await prisma.submission.count({
+      where: { userId, problemId: problem.id, verdict: 'AC' },
+    });
     if (acCount <= 1) {
-      user.stats.solved += 1;
+      stats.solved = Number(stats.solved || 0) + 1;
       const diffKey = problem.difficulty.toLowerCase();
-      user.stats.byDifficulty[diffKey] = (user.stats.byDifficulty[diffKey] || 0) + 1;
+      const byDifficulty = stats.byDifficulty || { easy: 0, medium: 0, hard: 0 };
+      byDifficulty[diffKey] = Number(byDifficulty[diffKey] || 0) + 1;
+      stats.byDifficulty = byDifficulty;
+
+      const byTopic = stats.byTopic || {};
       for (const topic of problem.topics || []) {
-        const cur = user.stats.byTopic.get(topic) || { solved: 0, attempts: 0 };
-        cur.solved += 1;
-        user.stats.byTopic.set(topic, cur);
+        byTopic[topic] = byTopic[topic] || { solved: 0, attempts: 0 };
+        byTopic[topic].solved += 1;
       }
+      stats.byTopic = byTopic;
     }
   }
-  await user.save();
+
+  await prisma.user.update({
+    where: { id: current.id },
+    data: { stats },
+  });
 }
 
 /** GET /api/submissions?problemSlug= — the current user's submissions. */
 export const listSubmissions = asyncHandler(async (req, res) => {
-  const q = { user: req.user._id };
+  const userId = req.user.id || req.user._id;
+  const where = { userId };
   if (req.query.problemSlug) {
-    const problem = await Problem.findOne({ slug: req.query.problemSlug }).select('_id');
-    if (problem) q.problem = problem._id;
+    const problem = await prisma.problem.findUnique({ where: { slug: req.query.problemSlug }, select: { id: true } });
+    if (problem) where.problemId = problem.id;
   }
-  const items = await Submission.find(q)
-    .select('problem language verdict passedCount totalCount runtimeMs createdAt')
-    .populate('problem', 'slug title difficulty')
-    .sort({ createdAt: -1 })
-    .limit(50)
-    .lean();
+  const items = await prisma.submission.findMany({
+    where,
+    select: {
+      id: true,
+      language: true,
+      verdict: true,
+      passedCount: true,
+      totalCount: true,
+      runtimeMs: true,
+      createdAt: true,
+      problem: { select: { slug: true, title: true, difficulty: true } },
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 50,
+  });
   res.json({ items });
 });
 
 /** GET /api/submissions/:id — full submission (only the owner's). */
 export const getSubmission = asyncHandler(async (req, res) => {
-  const submission = await Submission.findOne({ _id: req.params.id, user: req.user._id })
-    .populate('problem', 'slug title difficulty')
-    .lean();
+  const submission = await prisma.submission.findFirst({
+    where: { id: req.params.id, userId: req.user.id || req.user._id },
+    include: { problem: { select: { slug: true, title: true, difficulty: true } } },
+  });
   if (!submission) throw new ApiError(404, 'Submission not found');
-  res.json(submission);
+  res.json({
+    ...submission,
+    id: submission.id,
+    _id: submission.id,
+    problem: submission.problem,
+  });
 });

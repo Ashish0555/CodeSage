@@ -1,6 +1,4 @@
-import { Problem } from '../models/Problem.js';
-import { Submission } from '../models/Submission.js';
-import { AIReview } from '../models/AIReview.js';
+import { prisma } from '../infrastructure/database/prisma.js';
 import { asyncHandler, ApiError } from '../middleware/error.js';
 import { validate, hintSchema, askSchema } from '../utils/validation.js';
 import { initSSE, sseSend, sseDone, sseError } from '../utils/sse.js';
@@ -9,12 +7,11 @@ import * as rag from '../services/ragService.js';
 
 /**
  * POST /api/ai/hint  (SSE)
- * Streams a leveled hint token-by-token. The guardrail lives in the prompt
- * (no full solutions). Generic (no-code) hints are cached to save quota.
+ * Streams a leveled hint token-by-token.
  */
 export const hint = asyncHandler(async (req, res) => {
   const { problemSlug, level, code } = validate(hintSchema, req.body);
-  const problem = await Problem.findOne({ slug: problemSlug });
+  const problem = await prisma.problem.findUnique({ where: { slug: problemSlug } });
   if (!problem) throw new ApiError(404, 'Problem not found');
 
   initSSE(res);
@@ -24,21 +21,22 @@ export const hint = asyncHandler(async (req, res) => {
     }
     sseDone(res, { level });
   } catch (err) {
-    // Errors after headers are sent must go over the stream, not as JSON.
     sseError(res, err.message || 'Hint generation failed');
   }
 });
 
 /**
  * POST /api/ai/review/:submissionId
- * Structured review ANCHORED to the judge verdict. Cached per submission
- * (a submission is immutable, so its review is too).
+ * Structured review ANCHORED to the judge verdict.
  */
 export const review = asyncHandler(async (req, res) => {
-  const submission = await Submission.findOne({ _id: req.params.submissionId, user: req.user._id }).populate('problem');
+  const submission = await prisma.submission.findFirst({
+    where: { id: req.params.submissionId, userId: req.user.id || req.user._id },
+    include: { problem: true },
+  });
   if (!submission) throw new ApiError(404, 'Submission not found');
 
-  const existing = await AIReview.findOne({ submission: submission._id });
+  const existing = await prisma.aiReview.findUnique({ where: { submissionId: submission.id } });
   if (existing) return res.json({ review: existing, cached: true });
 
   const data = await ai.reviewSubmission({
@@ -50,18 +48,18 @@ export const review = asyncHandler(async (req, res) => {
     totalCount: submission.totalCount,
   });
 
-  const saved = await AIReview.create({
-    submission: submission._id,
-    user: req.user._id,
-    ...data,
+  const saved = await prisma.aiReview.create({
+    data: {
+      submissionId: submission.id,
+      userId: req.user.id || req.user._id,
+      ...data,
+    },
   });
   res.json({ review: saved, cached: false });
 });
 
 /**
  * POST /api/ai/ask  — RAG concept tutor.
- * Retrieve top-k grounded chunks, then answer with citations. Returns the
- * cited sources so the UI can show provenance.
  */
 export const ask = asyncHandler(async (req, res) => {
   const { question, topic, company } = validate(askSchema, req.body);

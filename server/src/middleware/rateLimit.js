@@ -9,7 +9,7 @@ import rateLimit from 'express-rate-limit';
  * With multiple server instances you'd swap in a shared store (e.g. Redis)
  * so the limit is global — a good scaling talking point.
  */
-const keyByUserOrIp = (req) => (req.user ? String(req.user._id) : req.ip);
+const keyByUserOrIp = (req) => (req.user ? String(req.user.id || req.user._id) : req.ip);
 
 export const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,

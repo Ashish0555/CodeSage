@@ -3,7 +3,7 @@
  *
  * Why this exists
  * ---------------
- * The React app normally talks to the Express API (which reads MongoDB and calls
+ * The React app normally talks to the Express API (which reads PostgreSQL and calls
  * Gemini). To let you *look at the UI* without setting any of that up, we can flip
  * the app into "preview mode": every network call is intercepted here and answered
  * with realistic, hand-written fixtures that match the real API response shapes
